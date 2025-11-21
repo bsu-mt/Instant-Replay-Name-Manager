@@ -6,6 +6,11 @@ import re
 import subprocess
 import platform
 
+try:
+    from send2trash import send2trash
+except ImportError:
+    send2trash = None
+
 # Config file path
 CONFIG_FILE = "./config.json"
 
@@ -62,10 +67,10 @@ class VideoManagerApp:
         BG_COLOR = "#ffffff"
         
         # --- Font Configuration (Unified Arial) ---
-        self.font_main = ("Arial", 10)
-        self.font_bold = ("Arial", 10, "bold")
+        self.font_main = ("Arial", 11)
+        self.font_bold = ("Arial", 11, "bold")
         self.font_large = ("Arial", 12, "bold")
-        self.font_mono = ("Arial", 10)  # Used for lists, user requested Arial everywhere
+        self.font_mono = ("Arial", 12)  # Used for lists, user requested Arial everywhere
         self.font_hint = ("Arial", 9)
 
         # General Frame
@@ -82,7 +87,7 @@ class VideoManagerApp:
         
         # Special Label Styles
         self.style.configure("Title.TLabel", background=BG_COLOR, foreground="#000", font=("Arial", 14, "bold"))
-        self.style.configure("Preview.TLabel", background=BG_COLOR, foreground=PRIMARY_COLOR, font=("Arial", 11, "bold"))
+        self.style.configure("Preview.TLabel", background=BG_COLOR, foreground=PRIMARY_COLOR, font=("Arial", 12, "bold"))
         self.style.configure("Hint.TLabel", background=BG_COLOR, foreground="#999999", font=self.font_hint)
 
         # Button (Normal)
@@ -114,7 +119,7 @@ class VideoManagerApp:
         tk.Label(header_frame, text="Instant Replay Name Manager", bg="#2b2d30", fg="#ff4655", font=("Arial", 16, "bold", "italic")).pack(side=tk.LEFT, padx=20)
         
         # Folder Path Display
-        self.folder_label = tk.Label(header_frame, text=self.current_folder or "No folder selected", bg="#2b2d30", fg="#cccccc", font=("Arial", 10))
+        self.folder_label = tk.Label(header_frame, text=self.current_folder or "No folder selected", bg="#2b2d30", fg="#cccccc", font=("Arial", 11))
         self.folder_label.pack(side=tk.LEFT, padx=10)
         
         # Header Buttons
@@ -167,6 +172,10 @@ class VideoManagerApp:
         # Event Bindings
         self.file_listbox.bind('<<ListboxSelect>>', self.on_file_select)
         self.file_listbox.bind('<Double-1>', lambda event: self.open_video()) # Double click to open
+
+        # --- NEW BINDINGS FOR DELETION ---
+        self.file_listbox.bind('<Delete>', self.delete_to_recycle_bin)
+        self.file_listbox.bind('<Shift-Delete>', self.delete_permanently)
         
         scrollbar.config(command=self.file_listbox.yview)
 
@@ -204,7 +213,7 @@ class VideoManagerApp:
         ttk.Label(search_row, text="🔍 Search or Create Tag:", style="Card.TLabel").pack(side=tk.LEFT)
         
         # Combobox for search
-        self.new_tag_combobox = ttk.Combobox(search_row, font=("Arial", 10))
+        self.new_tag_combobox = ttk.Combobox(search_row, font=("Arial", 11))
         self.new_tag_combobox.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
         
         # Bindings
@@ -585,6 +594,83 @@ class VideoManagerApp:
             subprocess.call(('open', filepath))
         else: 
             subprocess.call(('xdg-open', filepath))
+
+    # ------------------------------------------------
+    # NEW DELETE FUNCTIONS
+    # ------------------------------------------------
+    
+    def delete_to_recycle_bin(self, event):
+        """Delete key: Send to Recycle Bin"""
+        if send2trash is None:
+            messagebox.showerror("Missing Library", "Please run 'pip install send2trash' to use the Recycle Bin feature.")
+            return
+
+        selection = self.file_listbox.curselection()
+        if not selection:
+            return
+
+        index = selection[0]
+        filename = self.file_listbox.get(index)
+        filepath = os.path.join(self.current_folder, filename)
+
+        # Optional: Confirmation for recycle bin (usually not needed, but safer)
+        if not messagebox.askyesno("Move to Trash", f"Move '{filename}' to Recycle Bin?"):
+            return
+
+        try:
+            send2trash(filepath)
+            # Update UI
+            self.file_listbox.delete(index)
+            self.video_files.remove(filename)
+            self.current_file_label.config(text="Select a video...")
+            self.preview_entry.delete(0, tk.END)
+            
+            # Select the next item if available
+            if self.file_listbox.size() > index:
+                self.file_listbox.selection_set(index)
+                self.file_listbox.event_generate("<<ListboxSelect>>")
+            elif self.file_listbox.size() > 0:
+                self.file_listbox.selection_set(tk.END)
+                self.file_listbox.event_generate("<<ListboxSelect>>")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not move to trash:\n{e}")
+
+    def delete_permanently(self, event):
+        """Shift+Delete: Permanently Remove"""
+        selection = self.file_listbox.curselection()
+        if not selection:
+            return
+
+        index = selection[0]
+        filename = self.file_listbox.get(index)
+        filepath = os.path.join(self.current_folder, filename)
+
+        # STRONG Confirmation
+        if not messagebox.askyesno("Permanent Delete", f"⚠️ PERMANENTLY delete '{filename}'?\nThis cannot be undone!", icon='warning'):
+            return
+
+        try:
+            os.remove(filepath)
+            # Update UI
+            self.file_listbox.delete(index)
+            self.video_files.remove(filename)
+            self.current_file_label.config(text="Select a video...")
+            self.preview_entry.delete(0, tk.END)
+            
+            # Select the next item logic
+            if self.file_listbox.size() > index:
+                self.file_listbox.selection_set(index)
+                self.file_listbox.event_generate("<<ListboxSelect>>")
+            elif self.file_listbox.size() > 0:
+                self.file_listbox.selection_set(tk.END)
+                self.file_listbox.event_generate("<<ListboxSelect>>")
+                
+        except OSError as e:
+            messagebox.showerror("Error", f"Could not delete file:\n{e}")
+            
+        # Return 'break' to prevent the standard Delete event from also firing
+        return 'break'
 
 if __name__ == "__main__":
     root = tk.Tk()
