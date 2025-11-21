@@ -1,0 +1,27 @@
+# Python bytecode
+
+pycache/
+*.py[cod]
+*$py.class
+
+# PyInstaller distribution / build artifacts
+
+build/
+*.spec
+
+dist/
+
+# User configuration files (contains local paths, do not upload)
+
+config.json
+dist/config.json
+
+# Operating System metadata
+
+Thumbs.db
+.DS_Store
+
+# Virtual Environments
+
+venv/
+env/
