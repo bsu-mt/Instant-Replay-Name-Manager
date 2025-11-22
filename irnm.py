@@ -70,7 +70,7 @@ class VideoManagerApp:
         self.font_main = ("Arial", 11)
         self.font_bold = ("Arial", 11, "bold")
         self.font_large = ("Arial", 12, "bold")
-        self.font_mono = ("Arial", 12)  # Used for lists, user requested Arial everywhere
+        self.font_mono = ("Arial", 12)
         self.font_hint = ("Arial", 9)
 
         # General Frame
@@ -145,7 +145,7 @@ class VideoManagerApp:
         list_header = tk.Frame(left_panel, bg="white", padx=10, pady=10)
         list_header.pack(fill=tk.X)
         ttk.Label(list_header, text="Video File List", font=self.font_large, style="Card.TLabel").pack(side=tk.LEFT)
-        ttk.Label(list_header, text="(Time Descending)", foreground="gray", style="Card.TLabel").pack(side=tk.LEFT, padx=5)
+        ttk.Label(list_header, text="(Date ▼, Index ▲)", foreground="gray", style="Card.TLabel").pack(side=tk.LEFT, padx=5)
 
         # Listbox Container
         list_frame = tk.Frame(left_panel, bg="white")
@@ -173,7 +173,7 @@ class VideoManagerApp:
         self.file_listbox.bind('<<ListboxSelect>>', self.on_file_select)
         self.file_listbox.bind('<Double-1>', lambda event: self.open_video()) # Double click to open
 
-        # --- NEW BINDINGS FOR DELETION ---
+        # --- BINDINGS FOR DELETION ---
         self.file_listbox.bind('<Delete>', self.delete_to_recycle_bin)
         self.file_listbox.bind('<Shift-Delete>', self.delete_permanently)
         
@@ -212,14 +212,14 @@ class VideoManagerApp:
         
         ttk.Label(search_row, text="🔍 Search or Create Tag:", style="Card.TLabel").pack(side=tk.LEFT)
         
-        # Combobox for search
-        self.new_tag_combobox = ttk.Combobox(search_row, font=("Arial", 11))
-        self.new_tag_combobox.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        # Entry for search (Replaced Combobox with Entry)
+        self.tag_entry = ttk.Entry(search_row, font=("Arial", 11))
+        self.tag_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
         
         # Bindings
-        self.new_tag_combobox.bind("<Return>", lambda event: self.add_or_select_tag())
-        self.new_tag_combobox.bind("<KeyRelease>", self.on_tag_search_type) # Real-time filtering
-        self.new_tag_combobox.bind("<Tab>", self.on_tab_cycle) # Tab cycling
+        self.tag_entry.bind("<Return>", lambda event: self.add_or_select_tag())
+        self.tag_entry.bind("<KeyRelease>", self.on_tag_search_type) # Real-time filtering logic
+        self.tag_entry.bind("<Tab>", self.on_tab_cycle) # Tab cycling logic
         
         ttk.Button(search_row, text="+ Add/Select", command=self.add_or_select_tag).pack(side=tk.LEFT)
 
@@ -293,7 +293,33 @@ class VideoManagerApp:
         try:
             files = os.listdir(self.current_folder)
             files = [f for f in files if f.lower().endswith('.mp4')]
-            files.sort(reverse=True) 
+            
+            # --- Custom Sort Logic ---
+            # Goal: Date Descending (Newest first), but Index Ascending (1, 2, 3...) within that date.
+            def custom_sort_key(filename):
+                # Regex to parse "Name YYYY.MM.DD - Index..."
+                # UPDATED: Now allows for extra text after the index (e.g. tags)
+                # Matches "Valorant 2025.11.21 - 1.mp4" AND "Valorant 2025.11.21 - 1-tag.mp4"
+                match = re.match(r"(.+ \d{4}\.\d{2}\.\d{2}) - (\d+).*\.mp4$", filename, re.IGNORECASE)
+                
+                if match:
+                    # Group 1: "Valorant 2025.11.21" (Date string)
+                    # Group 2: "1" (Index)
+                    prefix = match.group(1).lower()
+                    index = int(match.group(2))
+                    
+                    # Sorting with reverse=True (Descending):
+                    # 1. Prefix: "2025.11.22" > "2025.11.21". (Newer date on top).
+                    # 2. Index: We want 1 before 10.
+                    #    In reverse sort, bigger comes first.
+                    #    -1 > -10. So -1 (Index 1) comes before -10 (Index 10).
+                    return (prefix, -index)
+                
+                # Fallback: For files not matching the format
+                return (filename.lower(), 0)
+
+            files.sort(key=custom_sort_key, reverse=True) 
+            # -------------------------
             
             for f in files:
                 self.file_listbox.insert(tk.END, f)
@@ -387,10 +413,6 @@ class VideoManagerApp:
         # Sort tags
         self.available_tags.sort()
 
-        # Update Combobox values
-        if hasattr(self, 'new_tag_combobox'):
-            self.new_tag_combobox['values'] = self.available_tags
-        
         # Grid layout for tags
         col_max = 8
         for i, tag in enumerate(self.available_tags):
@@ -425,16 +447,15 @@ class VideoManagerApp:
                 self.update_preview_name()
 
     def on_tag_search_type(self, event):
-        """Filter logic for Combobox"""
+        """Filter logic for Entry"""
         # Ignore navigation/control keys
         if event.keysym in ['Up', 'Down', 'Return', 'Tab']:
             return
             
-        current_text = self.new_tag_combobox.get()
+        current_text = self.tag_entry.get()
         
         # If empty, show all, reset cycle
         if current_text == '':
-            self.new_tag_combobox['values'] = self.available_tags
             self.filtered_tags = self.available_tags
             self.tab_cycle_index = -1
         else:
@@ -444,8 +465,6 @@ class VideoManagerApp:
                 if current_text.lower() in item.lower():
                     self.filtered_tags.append(item)
             
-            # Update values
-            self.new_tag_combobox['values'] = self.filtered_tags
             # Reset cycle index on input change
             self.tab_cycle_index = -1
 
@@ -461,15 +480,15 @@ class VideoManagerApp:
         next_tag = self.filtered_tags[self.tab_cycle_index]
         
         # Update text
-        self.new_tag_combobox.delete(0, tk.END)
-        self.new_tag_combobox.insert(0, next_tag)
+        self.tag_entry.delete(0, tk.END)
+        self.tag_entry.insert(0, next_tag)
         
         # Prevent default focus change
         return 'break'
 
     def add_or_select_tag(self):
         """Smart add or select tag"""
-        input_text = self.new_tag_combobox.get().strip()
+        input_text = self.tag_entry.get().strip()
         if not input_text:
             return
             
@@ -485,9 +504,9 @@ class VideoManagerApp:
             if existing_tag in self.selected_tags_vars:
                 self.selected_tags_vars[existing_tag].set(True)
                 self.update_preview_name()
-                self.new_tag_combobox.set('')
-                # Restore full list
-                self.new_tag_combobox['values'] = self.available_tags
+                self.tag_entry.delete(0, tk.END)
+                
+                # Restore filter list
                 self.filtered_tags = self.available_tags
                 self.tab_cycle_index = -1
         else:
@@ -501,7 +520,7 @@ class VideoManagerApp:
                 self.selected_tags_vars[input_text].set(True)
             
             self.update_preview_name()
-            self.new_tag_combobox.set('')
+            self.tag_entry.delete(0, tk.END)
             self.filtered_tags = self.available_tags
             self.tab_cycle_index = -1
 
@@ -534,7 +553,6 @@ class VideoManagerApp:
         original_name = self.file_listbox.get(selection[0])
         base, ext = os.path.splitext(original_name)
         
-        # 修改: 通用化正则，匹配 "任意游戏名 日期 - 序号"
         match = re.match(r"(.+ \d{4}\.\d{2}\.\d{2} - \d+)", base)
         
         if match:
@@ -595,10 +613,6 @@ class VideoManagerApp:
         else: 
             subprocess.call(('xdg-open', filepath))
 
-    # ------------------------------------------------
-    # NEW DELETE FUNCTIONS
-    # ------------------------------------------------
-    
     def delete_to_recycle_bin(self, event):
         """Delete key: Send to Recycle Bin"""
         if send2trash is None:
@@ -613,7 +627,6 @@ class VideoManagerApp:
         filename = self.file_listbox.get(index)
         filepath = os.path.join(self.current_folder, filename)
 
-        # Optional: Confirmation for recycle bin (usually not needed, but safer)
         if not messagebox.askyesno("Move to Trash", f"Move '{filename}' to Recycle Bin?"):
             return
 
