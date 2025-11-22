@@ -210,11 +210,11 @@ class VideoManagerApp:
         search_row = ttk.Frame(tag_card, style="Card.TFrame")
         search_row.pack(fill=tk.X, padx=10, pady=(10, 5))
         
-        ttk.Label(search_row, text="🔍 Search or Create Tag:", style="Card.TLabel").pack(side=tk.LEFT)
+        ttk.Label(search_row, text="🔍 Search or Create Tag:", style="Card.TLabel").pack(anchor=tk.W)
         
         # Entry for search (Replaced Combobox with Entry)
-        self.tag_entry = ttk.Entry(search_row, font=("Arial", 11))
-        self.tag_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        self.tag_entry = ttk.Entry(search_row, font=("Arial", 12))
+        self.tag_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5, ipady=6)
         
         # Bindings
         self.tag_entry.bind("<Return>", lambda event: self.add_or_select_tag())
@@ -238,7 +238,7 @@ class VideoManagerApp:
         
         # Preview Entry (Arial)
         self.preview_entry = ttk.Entry(action_card, font=("Arial", 11))
-        self.preview_entry.pack(anchor=tk.W, pady=5, fill=tk.X)
+        self.preview_entry.pack(anchor=tk.W, pady=5, fill=tk.X, ipady=6)
 
         ttk.Button(action_card, text="✅ Apply Rename", command=self.apply_rename, style="Success.TButton", width=20).pack(anchor=tk.E, pady=(10, 0))
 
@@ -327,7 +327,7 @@ class VideoManagerApp:
                 
             self.current_file_label.config(text="Select a video from the list...")
             self.preview_entry.delete(0, tk.END)
-            self.preview_entry.insert(0, "...")
+            self.preview_entry.insert(0, "")
             
             self.refresh_tags_ui()
             
