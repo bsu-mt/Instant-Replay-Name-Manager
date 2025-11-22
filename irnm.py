@@ -286,6 +286,287 @@ class VideoManagerApp:
     def refresh_file_list(self):
         if not self.current_folder:
             return
+
+try:
+    from send2trash import send2trash
+except ImportError:
+    send2trash = None
+
+# Config file path
+CONFIG_FILE = "./config.json"
+
+class VideoManagerApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Instant Replay Name Manager")
+        self.root.geometry("1100x750")
+        self.root.configure(bg="#f0f2f5")  # Overall background color
+
+        # --- SET ICON ---
+        # Looks for icon.ico in the same folder. If found, sets it.
+        if os.path.exists("icon.ico"):
+            try:
+                self.root.iconbitmap("icon.ico")
+            except Exception:
+                pass # Ignore icon errors
+        
+        # Initialize data
+        self.current_folder = ""
+        self.video_files = []
+        # Default tags
+        self.available_tags = ["3k", "4k", "ace", "clutch", "funny", "marshal", "airshot"] 
+        self.selected_tags_vars = {}
+        
+        # Variables for search and Tab cycling
+        self.filtered_tags = []      # List of tags matching current search
+        self.tab_cycle_index = -1    # Current index for Tab cycling
+        
+        # Load configuration
+        self.load_config()
+        
+        # --- Style Configuration ---
+        self.setup_styles()
+        
+        # --- Build UI ---
+        self.create_ui()
+        
+        # Auto-load previous folder
+        if self.current_folder and os.path.exists(self.current_folder):
+            self.refresh_file_list()
+        else:
+            self.current_folder = ""
+
+    def setup_styles(self):
+        """Configure styles (Unified font: Arial)"""
+        self.style = ttk.Style()
+        self.style.theme_use('clam')
+        
+        # Color definitions
+        PRIMARY_COLOR = "#0078d4"    # Windows Blue
+        DANGER_COLOR = "#d13438"     # Warning Red
+        SUCCESS_COLOR = "#107c10"    # Success Green
+        BG_COLOR = "#ffffff"
+        
+        # --- Font Configuration (Unified Arial) ---
+        self.font_main = ("Arial", 11)
+        self.font_bold = ("Arial", 11, "bold")
+        self.font_large = ("Arial", 12, "bold")
+        self.font_mono = ("Arial", 12)
+        self.font_hint = ("Arial", 9)
+
+        # General Frame
+        self.style.configure("TFrame", background="#f0f2f5")
+        self.style.configure("Card.TFrame", background=BG_COLOR, relief="flat")
+        
+        # Labelframe
+        self.style.configure("Card.TLabelframe", background=BG_COLOR, relief="solid", borderwidth=1)
+        self.style.configure("Card.TLabelframe.Label", background=BG_COLOR, foreground="#555", font=self.font_bold)
+
+        # Label
+        self.style.configure("TLabel", background="#f0f2f5", foreground="#333", font=self.font_main)
+        self.style.configure("Card.TLabel", background=BG_COLOR, foreground="#333", font=self.font_main)
+        
+        # Special Label Styles
+        self.style.configure("Title.TLabel", background=BG_COLOR, foreground="#000", font=("Arial", 14, "bold"))
+        self.style.configure("Preview.TLabel", background=BG_COLOR, foreground=PRIMARY_COLOR, font=("Arial", 12, "bold"))
+        self.style.configure("Hint.TLabel", background=BG_COLOR, foreground="#999999", font=self.font_hint)
+
+        # Button (Normal)
+        self.style.configure("TButton", font=self.font_main, padding=6, borderwidth=0)
+        self.style.map("TButton", background=[('active', '#e1e1e1')])
+
+        # Button (Primary - Blue)
+        self.style.configure("Primary.TButton", background=PRIMARY_COLOR, foreground="white", font=self.font_bold, borderwidth=0)
+        self.style.map("Primary.TButton", background=[('active', '#006cc1'), ('pressed', '#005a9e')])
+
+        # Button (Danger - Red)
+        self.style.configure("Danger.TButton", background=DANGER_COLOR, foreground="white", font=self.font_bold, borderwidth=0)
+        self.style.map("Danger.TButton", background=[('active', '#b12b2e')])
+
+        # Button (Success - Green)
+        self.style.configure("Success.TButton", background=SUCCESS_COLOR, foreground="white", font=self.font_bold, borderwidth=0)
+        self.style.map("Success.TButton", background=[('active', '#0e6f0e')])
+
+        # Checkbox
+        self.style.configure("TCheckbutton", background=BG_COLOR, font=self.font_main)
+
+    def create_ui(self):
+        # --- Header (Dark Background) ---
+        header_frame = tk.Frame(self.root, bg="#2b2d30", height=60)
+        header_frame.pack(fill=tk.X, side=tk.TOP)
+        header_frame.pack_propagate(False) # Fixed height
+
+        # Title
+        tk.Label(header_frame, text="Instant Replay Name Manager", bg="#2b2d30", fg="#ff4655", font=("Arial", 16, "bold", "italic")).pack(side=tk.LEFT, padx=20)
+        
+        # Folder Path Display
+        self.folder_label = tk.Label(header_frame, text=self.current_folder or "No folder selected", bg="#2b2d30", fg="#cccccc", font=("Arial", 11))
+        self.folder_label.pack(side=tk.LEFT, padx=10)
+        
+        # Header Buttons
+        btn_bar = tk.Frame(header_frame, bg="#2b2d30")
+        btn_bar.pack(side=tk.RIGHT, padx=20)
+
+        self.create_header_btn(btn_bar, "📂 Select Folder", self.select_folder)
+        self.create_header_btn(btn_bar, "🔄 Refresh", self.refresh_file_list)
+        
+        # --- Main Container ---
+        main_container = ttk.Frame(self.root, padding=15)
+        main_container.pack(fill=tk.BOTH, expand=True)
+
+        # Paned Window (Splitter)
+        paned = ttk.PanedWindow(main_container, orient=tk.HORIZONTAL)
+        paned.pack(fill=tk.BOTH, expand=True)
+
+        # --- Left Panel: File List ---
+        left_panel = ttk.Frame(paned, style="Card.TFrame")
+        paned.add(left_panel, weight=1)
+
+        # List Header
+        list_header = tk.Frame(left_panel, bg="white", padx=10, pady=10)
+        list_header.pack(fill=tk.X)
+        ttk.Label(list_header, text="Video File List", font=self.font_large, style="Card.TLabel").pack(side=tk.LEFT)
+        ttk.Label(list_header, text="(Date ▼, Index ▲)", foreground="gray", style="Card.TLabel").pack(side=tk.LEFT, padx=5)
+
+        # Listbox Container
+        list_frame = tk.Frame(left_panel, bg="white")
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
+
+        scrollbar = ttk.Scrollbar(list_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.file_listbox = tk.Listbox(
+            list_frame, 
+            yscrollcommand=scrollbar.set, 
+            font=self.font_mono,
+            selectmode=tk.SINGLE,
+            bd=0,
+            highlightthickness=0,
+            activestyle='none',
+            selectbackground="#e3f2fd",
+            selectforeground="#000000",
+            fg="#333",
+            height=20
+        )
+        self.file_listbox.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        # Event Bindings
+        self.file_listbox.bind('<<ListboxSelect>>', self.on_file_select)
+        self.file_listbox.bind('<Double-1>', lambda event: self.open_video()) # Double click to open
+
+        # --- BINDINGS FOR DELETION ---
+        self.file_listbox.bind('<Delete>', self.delete_to_recycle_bin)
+        self.file_listbox.bind('<Shift-Delete>', self.delete_permanently)
+        
+        scrollbar.config(command=self.file_listbox.yview)
+
+        # Batch Action Bar (Bottom Left)
+        batch_action_frame = tk.Frame(left_panel, bg="#f8f9fa", height=50, padx=10)
+        batch_action_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=(1, 0))
+        
+        ttk.Button(batch_action_frame, text="⚠️ Batch Format (DVR -> Index)", command=self.batch_format_base_names, style="Danger.TButton").pack(side=tk.LEFT, pady=10, padx=5)
+        ttk.Button(batch_action_frame, text="✂️ Replace Trimmed (Trim -> Orig)", command=self.replace_trimmed_files, style="Primary.TButton").pack(side=tk.RIGHT, pady=10, padx=5)
+
+        # --- Right Panel: Details & Operations ---
+        right_panel = ttk.Frame(paned, padding=(15, 0, 0, 0))
+        paned.add(right_panel, weight=1)
+
+        # Card 1: Currently Selected
+        info_card = ttk.Labelframe(right_panel, text="Currently Selected", style="Card.TLabelframe", padding=15)
+        info_card.pack(fill=tk.X, pady=(0, 15))
+        
+        self.current_file_label = ttk.Label(info_card, text="Select a video from the list...", wraplength=400, style="Title.TLabel")
+        self.current_file_label.pack(anchor=tk.W, fill=tk.X)
+
+        btn_row = ttk.Frame(info_card, style="Card.TFrame")
+        btn_row.pack(fill=tk.X, pady=(15, 0))
+        ttk.Button(btn_row, text="🎬 Open Player / Trim", command=self.open_video).pack(side=tk.LEFT)
+        ttk.Label(btn_row, text="Tip: After saving a trim copy, click 'Replace Trimmed' below.", foreground="#888", style="Card.TLabel").pack(side=tk.LEFT, padx=10)
+
+        # Card 2: Tag System
+        tag_card = ttk.Labelframe(right_panel, text="Add Tags", style="Card.TLabelframe", padding=15)
+        tag_card.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+
+        # Search / New Tag Bar
+        search_row = ttk.Frame(tag_card, style="Card.TFrame")
+        search_row.pack(fill=tk.X, padx=10, pady=(10, 5))
+        
+        ttk.Label(search_row, text="🔍 Search or Create Tag:", style="Card.TLabel").pack(anchor=tk.W)
+        
+        # Entry for search (Replaced Combobox with Entry)
+        self.tag_entry = ttk.Entry(search_row, font=("Arial", 12))
+        self.tag_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5, ipady=6)
+        
+        # Bindings
+        self.tag_entry.bind("<Return>", lambda event: self.add_or_select_tag())
+        self.tag_entry.bind("<KeyRelease>", self.on_tag_search_type) # Real-time filtering logic
+        self.tag_entry.bind("<Tab>", self.on_tab_cycle) # Tab cycling logic
+        
+        ttk.Button(search_row, text="+ Add/Select", command=self.add_or_select_tag).pack(side=tk.LEFT)
+
+        # Tags Grid Area
+        self.tags_frame = ttk.Frame(tag_card, style="Card.TFrame")
+        self.tags_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        # Hint text
+        ttk.Label(tag_card, text="💡 Tip: Press Tab to cycle matches; Right-click tag to delete.", style="Hint.TLabel").pack(anchor=tk.W, padx=10, pady=(0, 5))
+
+        # Card 3: Preview & Apply
+        action_card = ttk.Labelframe(right_panel, text="Confirm Changes", style="Card.TLabelframe", padding=15)
+        action_card.pack(fill=tk.X)
+
+        ttk.Label(action_card, text="Filename Preview (Editable):", style="Card.TLabel").pack(anchor=tk.W)
+        
+        # Preview Entry (Arial)
+        self.preview_entry = ttk.Entry(action_card, font=("Arial", 11))
+        self.preview_entry.pack(anchor=tk.W, pady=5, fill=tk.X, ipady=6)
+
+        ttk.Button(action_card, text="✅ Apply Rename", command=self.apply_rename, style="Success.TButton", width=20).pack(anchor=tk.E, pady=(10, 0))
+
+    def create_header_btn(self, parent, text, command):
+        """Create flat button for header"""
+        btn = tk.Button(parent, text=text, command=command, 
+                        bg="#404246", fg="white", 
+                        activebackground="#505256", activeforeground="white",
+                        bd=0, padx=15, pady=5, font=("Arial", 9))
+        btn.pack(side=tk.LEFT, padx=2)
+
+    # ---------------- Logic Section ----------------
+    
+    def load_config(self):
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.current_folder = data.get('last_folder', "")
+                    saved_tags = data.get('tags', [])
+                    if saved_tags:
+                        self.available_tags = saved_tags
+            except:
+                pass
+
+    def save_config(self):
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+        
+        data = {
+            'last_folder': self.current_folder,
+            'tags': self.available_tags
+        }
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+
+    def select_folder(self):
+        folder = filedialog.askdirectory()
+        if folder:
+            self.current_folder = folder
+            self.folder_label.config(text=folder)
+            self.save_config()
+            self.refresh_file_list()
+
+    def refresh_file_list(self):
+        if not self.current_folder:
+            return
         
         self.file_listbox.delete(0, tk.END)
         self.video_files = []
