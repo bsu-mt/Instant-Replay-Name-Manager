@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 import os
 import json
 import re
@@ -32,289 +32,16 @@ class VideoManagerApp:
         # Initialize data
         self.current_folder = ""
         self.video_files = []
-        # Default tags
-        self.available_tags = ["3k", "4k", "ace", "clutch", "funny", "marshal", "airshot"] 
-        self.selected_tags_vars = {}
         
-        # Variables for search and Tab cycling
-        self.filtered_tags = []      # List of tags matching current search
-        self.tab_cycle_index = -1    # Current index for Tab cycling
-        
-        # Load configuration
-        self.load_config()
-        
-        # --- Style Configuration ---
-        self.setup_styles()
-        
-        # --- Build UI ---
-        self.create_ui()
-        
-        # Auto-load previous folder
-        if self.current_folder and os.path.exists(self.current_folder):
-            self.refresh_file_list()
-        else:
-            self.current_folder = ""
-
-    def setup_styles(self):
-        """Configure styles (Unified font: Arial)"""
-        self.style = ttk.Style()
-        self.style.theme_use('clam')
-        
-        # Color definitions
-        PRIMARY_COLOR = "#0078d4"    # Windows Blue
-        DANGER_COLOR = "#d13438"     # Warning Red
-        SUCCESS_COLOR = "#107c10"    # Success Green
-        BG_COLOR = "#ffffff"
-        
-        # --- Font Configuration (Unified Arial) ---
-        self.font_main = ("Arial", 11)
-        self.font_bold = ("Arial", 11, "bold")
-        self.font_large = ("Arial", 12, "bold")
-        self.font_mono = ("Arial", 12)
-        self.font_hint = ("Arial", 9)
-
-        # General Frame
-        self.style.configure("TFrame", background="#f0f2f5")
-        self.style.configure("Card.TFrame", background=BG_COLOR, relief="flat")
-        
-        # Labelframe
-        self.style.configure("Card.TLabelframe", background=BG_COLOR, relief="solid", borderwidth=1)
-        self.style.configure("Card.TLabelframe.Label", background=BG_COLOR, foreground="#555", font=self.font_bold)
-
-        # Label
-        self.style.configure("TLabel", background="#f0f2f5", foreground="#333", font=self.font_main)
-        self.style.configure("Card.TLabel", background=BG_COLOR, foreground="#333", font=self.font_main)
-        
-        # Special Label Styles
-        self.style.configure("Title.TLabel", background=BG_COLOR, foreground="#000", font=("Arial", 14, "bold"))
-        self.style.configure("Preview.TLabel", background=BG_COLOR, foreground=PRIMARY_COLOR, font=("Arial", 12, "bold"))
-        self.style.configure("Hint.TLabel", background=BG_COLOR, foreground="#999999", font=self.font_hint)
-
-        # Button (Normal)
-        self.style.configure("TButton", font=self.font_main, padding=6, borderwidth=0)
-        self.style.map("TButton", background=[('active', '#e1e1e1')])
-
-        # Button (Primary - Blue)
-        self.style.configure("Primary.TButton", background=PRIMARY_COLOR, foreground="white", font=self.font_bold, borderwidth=0)
-        self.style.map("Primary.TButton", background=[('active', '#006cc1'), ('pressed', '#005a9e')])
-
-        # Button (Danger - Red)
-        self.style.configure("Danger.TButton", background=DANGER_COLOR, foreground="white", font=self.font_bold, borderwidth=0)
-        self.style.map("Danger.TButton", background=[('active', '#b12b2e')])
-
-        # Button (Success - Green)
-        self.style.configure("Success.TButton", background=SUCCESS_COLOR, foreground="white", font=self.font_bold, borderwidth=0)
-        self.style.map("Success.TButton", background=[('active', '#0e6f0e')])
-
-        # Checkbox
-        self.style.configure("TCheckbutton", background=BG_COLOR, font=self.font_main)
-
-    def create_ui(self):
-        # --- Header (Dark Background) ---
-        header_frame = tk.Frame(self.root, bg="#2b2d30", height=60)
-        header_frame.pack(fill=tk.X, side=tk.TOP)
-        header_frame.pack_propagate(False) # Fixed height
-
-        # Title
-        tk.Label(header_frame, text="Instant Replay Name Manager", bg="#2b2d30", fg="#ff4655", font=("Arial", 16, "bold", "italic")).pack(side=tk.LEFT, padx=20)
-        
-        # Folder Path Display
-        self.folder_label = tk.Label(header_frame, text=self.current_folder or "No folder selected", bg="#2b2d30", fg="#cccccc", font=("Arial", 11))
-        self.folder_label.pack(side=tk.LEFT, padx=10)
-        
-        # Header Buttons
-        btn_bar = tk.Frame(header_frame, bg="#2b2d30")
-        btn_bar.pack(side=tk.RIGHT, padx=20)
-
-        self.create_header_btn(btn_bar, "📂 Select Folder", self.select_folder)
-        self.create_header_btn(btn_bar, "🔄 Refresh", self.refresh_file_list)
-        
-        # --- Main Container ---
-        main_container = ttk.Frame(self.root, padding=15)
-        main_container.pack(fill=tk.BOTH, expand=True)
-
-        # Paned Window (Splitter)
-        paned = ttk.PanedWindow(main_container, orient=tk.HORIZONTAL)
-        paned.pack(fill=tk.BOTH, expand=True)
-
-        # --- Left Panel: File List ---
-        left_panel = ttk.Frame(paned, style="Card.TFrame")
-        paned.add(left_panel, weight=1)
-
-        # List Header
-        list_header = tk.Frame(left_panel, bg="white", padx=10, pady=10)
-        list_header.pack(fill=tk.X)
-        ttk.Label(list_header, text="Video File List", font=self.font_large, style="Card.TLabel").pack(side=tk.LEFT)
-        ttk.Label(list_header, text="(Date ▼, Index ▲)", foreground="gray", style="Card.TLabel").pack(side=tk.LEFT, padx=5)
-
-        # Listbox Container
-        list_frame = tk.Frame(left_panel, bg="white")
-        list_frame.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
-
-        scrollbar = ttk.Scrollbar(list_frame)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        self.file_listbox = tk.Listbox(
-            list_frame, 
-            yscrollcommand=scrollbar.set, 
-            font=self.font_mono,
-            selectmode=tk.SINGLE,
-            bd=0,
-            highlightthickness=0,
-            activestyle='none',
-            selectbackground="#e3f2fd",
-            selectforeground="#000000",
-            fg="#333",
-            height=20
-        )
-        self.file_listbox.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-        
-        # Event Bindings
-        self.file_listbox.bind('<<ListboxSelect>>', self.on_file_select)
-        self.file_listbox.bind('<Double-1>', lambda event: self.open_video()) # Double click to open
-
-        # --- BINDINGS FOR DELETION ---
-        self.file_listbox.bind('<Delete>', self.delete_to_recycle_bin)
-        self.file_listbox.bind('<Shift-Delete>', self.delete_permanently)
-        
-        scrollbar.config(command=self.file_listbox.yview)
-
-        # Batch Action Bar (Bottom Left)
-        batch_action_frame = tk.Frame(left_panel, bg="#f8f9fa", height=50, padx=10)
-        batch_action_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=(1, 0))
-        
-        ttk.Button(batch_action_frame, text="⚠️ Batch Format (DVR -> Index)", command=self.batch_format_base_names, style="Danger.TButton").pack(side=tk.LEFT, pady=10, padx=5)
-        ttk.Button(batch_action_frame, text="✂️ Replace Trimmed (Trim -> Orig)", command=self.replace_trimmed_files, style="Primary.TButton").pack(side=tk.RIGHT, pady=10, padx=5)
-
-        # --- Right Panel: Details & Operations ---
-        right_panel = ttk.Frame(paned, padding=(15, 0, 0, 0))
-        paned.add(right_panel, weight=1)
-
-        # Card 1: Currently Selected
-        info_card = ttk.Labelframe(right_panel, text="Currently Selected", style="Card.TLabelframe", padding=15)
-        info_card.pack(fill=tk.X, pady=(0, 15))
-        
-        self.current_file_label = ttk.Label(info_card, text="Select a video from the list...", wraplength=400, style="Title.TLabel")
-        self.current_file_label.pack(anchor=tk.W, fill=tk.X)
-
-        btn_row = ttk.Frame(info_card, style="Card.TFrame")
-        btn_row.pack(fill=tk.X, pady=(15, 0))
-        ttk.Button(btn_row, text="🎬 Open Player / Trim", command=self.open_video).pack(side=tk.LEFT)
-        ttk.Label(btn_row, text="Tip: After saving a trim copy, click 'Replace Trimmed' below.", foreground="#888", style="Card.TLabel").pack(side=tk.LEFT, padx=10)
-
-        # Card 2: Tag System
-        tag_card = ttk.Labelframe(right_panel, text="Add Tags", style="Card.TLabelframe", padding=15)
-        tag_card.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
-
-        # Search / New Tag Bar
-        search_row = ttk.Frame(tag_card, style="Card.TFrame")
-        search_row.pack(fill=tk.X, padx=10, pady=(10, 5))
-        
-        ttk.Label(search_row, text="🔍 Search or Create Tag:", style="Card.TLabel").pack(anchor=tk.W)
-        
-        # Entry for search (Replaced Combobox with Entry)
-        self.tag_entry = ttk.Entry(search_row, font=("Arial", 12))
-        self.tag_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5, ipady=6)
-        
-        # Bindings
-        self.tag_entry.bind("<Return>", lambda event: self.add_or_select_tag())
-        self.tag_entry.bind("<KeyRelease>", self.on_tag_search_type) # Real-time filtering logic
-        self.tag_entry.bind("<Tab>", self.on_tab_cycle) # Tab cycling logic
-        
-        ttk.Button(search_row, text="+ Add/Select", command=self.add_or_select_tag).pack(side=tk.LEFT)
-
-        # Tags Grid Area
-        self.tags_frame = ttk.Frame(tag_card, style="Card.TFrame")
-        self.tags_frame.pack(fill=tk.BOTH, expand=True, pady=5)
-        
-        # Hint text
-        ttk.Label(tag_card, text="💡 Tip: Press Tab to cycle matches; Right-click tag to delete.", style="Hint.TLabel").pack(anchor=tk.W, padx=10, pady=(0, 5))
-
-        # Card 3: Preview & Apply
-        action_card = ttk.Labelframe(right_panel, text="Confirm Changes", style="Card.TLabelframe", padding=15)
-        action_card.pack(fill=tk.X)
-
-        ttk.Label(action_card, text="Filename Preview (Editable):", style="Card.TLabel").pack(anchor=tk.W)
-        
-        # Preview Entry (Arial)
-        self.preview_entry = ttk.Entry(action_card, font=("Arial", 11))
-        self.preview_entry.pack(anchor=tk.W, pady=5, fill=tk.X, ipady=6)
-
-        ttk.Button(action_card, text="✅ Apply Rename", command=self.apply_rename, style="Success.TButton", width=20).pack(anchor=tk.E, pady=(10, 0))
-
-    def create_header_btn(self, parent, text, command):
-        """Create flat button for header"""
-        btn = tk.Button(parent, text=text, command=command, 
-                        bg="#404246", fg="white", 
-                        activebackground="#505256", activeforeground="white",
-                        bd=0, padx=15, pady=5, font=("Arial", 9))
-        btn.pack(side=tk.LEFT, padx=2)
-
-    # ---------------- Logic Section ----------------
-    
-    def load_config(self):
-        if os.path.exists(CONFIG_FILE):
-            try:
-                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    self.current_folder = data.get('last_folder', "")
-                    saved_tags = data.get('tags', [])
-                    if saved_tags:
-                        self.available_tags = saved_tags
-            except:
-                pass
-
-    def save_config(self):
-        # Ensure directory exists
-        os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
-        
-        data = {
-            'last_folder': self.current_folder,
-            'tags': self.available_tags
+        # --- NEW TAG DATA STRUCTURE ---
+        # Dictionary: {"GameName": ["tag1", "tag2"], ...}
+        self.tag_data = {
+            "Valorant": ["ace", "clutch", "4k", "5k", "op", "marshal"],
+            "SoT": ["tuck", "steal", "sink", "naval"],
+            "General": ["funny", "fail", "highlight"]
         }
-        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-
-    def select_folder(self):
-        folder = filedialog.askdirectory()
-        if folder:
-            self.current_folder = folder
-            self.folder_label.config(text=folder)
-            self.save_config()
-            self.refresh_file_list()
-
-    def refresh_file_list(self):
-        if not self.current_folder:
-            return
-
-try:
-    from send2trash import send2trash
-except ImportError:
-    send2trash = None
-
-# Config file path
-CONFIG_FILE = "./config.json"
-
-class VideoManagerApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Instant Replay Name Manager")
-        self.root.geometry("1100x750")
-        self.root.configure(bg="#f0f2f5")  # Overall background color
-
-        # --- SET ICON ---
-        # Looks for icon.ico in the same folder. If found, sets it.
-        if os.path.exists("icon.ico"):
-            try:
-                self.root.iconbitmap("icon.ico")
-            except Exception:
-                pass # Ignore icon errors
+        self.current_game_category = "Valorant" # Default view
         
-        # Initialize data
-        self.current_folder = ""
-        self.video_files = []
-        # Default tags
-        self.available_tags = ["3k", "4k", "ace", "clutch", "funny", "marshal", "airshot"] 
         self.selected_tags_vars = {}
         
         # Variables for search and Tab cycling
@@ -486,6 +213,17 @@ class VideoManagerApp:
         # Card 2: Tag System
         tag_card = ttk.Labelframe(right_panel, text="Add Tags", style="Card.TLabelframe", padding=15)
         tag_card.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+        
+        # --- NEW: Game Selection Row ---
+        game_row = ttk.Frame(tag_card, style="Card.TFrame")
+        game_row.pack(fill=tk.X, padx=10, pady=(5, 0))
+        
+        ttk.Label(game_row, text="🎮 Game / Category:", style="Card.TLabel").pack(side=tk.LEFT)
+        
+        # Game Combobox
+        self.game_combobox = ttk.Combobox(game_row, state="readonly", font=("Arial", 11), width=15)
+        self.game_combobox.pack(side=tk.LEFT, padx=10)
+        self.game_combobox.bind("<<ComboboxSelected>>", self.on_game_change)
 
         # Search / New Tag Bar
         search_row = ttk.Frame(tag_card, style="Card.TFrame")
@@ -493,7 +231,7 @@ class VideoManagerApp:
         
         ttk.Label(search_row, text="🔍 Search or Create Tag:", style="Card.TLabel").pack(anchor=tk.W)
         
-        # Entry for search (Replaced Combobox with Entry)
+        # Entry for search
         self.tag_entry = ttk.Entry(search_row, font=("Arial", 12))
         self.tag_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5, ipady=6)
         
@@ -539,11 +277,25 @@ class VideoManagerApp:
                 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     self.current_folder = data.get('last_folder', "")
-                    saved_tags = data.get('tags', [])
-                    if saved_tags:
-                        self.available_tags = saved_tags
-            except:
-                pass
+                    
+                    # Migration Logic: Handle old config (List) -> New config (Dict)
+                    loaded_tags = data.get('tag_data') # Look for new key
+                    
+                    if loaded_tags and isinstance(loaded_tags, dict):
+                        # Modern config found
+                        self.tag_data = loaded_tags
+                    elif 'tags' in data and isinstance(data['tags'], list):
+                        # Legacy config found: Move old tags to "General"
+                        if data['tags']:
+                            self.tag_data["General"] = list(set(self.tag_data["General"] + data['tags']))
+                        print("Migrated legacy tags to 'General' category.")
+                    
+                    # Ensure defaults exist if deleted
+                    if "Valorant" not in self.tag_data: self.tag_data["Valorant"] = []
+                    if "SoT" not in self.tag_data: self.tag_data["SoT"] = []
+
+            except Exception as e:
+                print(f"Error loading config: {e}")
 
     def save_config(self):
         # Ensure directory exists
@@ -551,7 +303,7 @@ class VideoManagerApp:
         
         data = {
             'last_folder': self.current_folder,
-            'tags': self.available_tags
+            'tag_data': self.tag_data # Save the dictionary
         }
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
@@ -576,27 +328,12 @@ class VideoManagerApp:
             files = [f for f in files if f.lower().endswith('.mp4')]
             
             # --- Custom Sort Logic ---
-            # Goal: Date Descending (Newest first), but Index Ascending (1, 2, 3...) within that date.
             def custom_sort_key(filename):
-                # Regex to parse "Name YYYY.MM.DD - Index..."
-                # UPDATED: Now allows for extra text after the index (e.g. tags)
-                # Matches "Valorant 2025.11.21 - 1.mp4" AND "Valorant 2025.11.21 - 1-tag.mp4"
                 match = re.match(r"(.+ \d{4}\.\d{2}\.\d{2}) - (\d+).*\.mp4$", filename, re.IGNORECASE)
-                
                 if match:
-                    # Group 1: "Valorant 2025.11.21" (Date string)
-                    # Group 2: "1" (Index)
                     prefix = match.group(1).lower()
                     index = int(match.group(2))
-                    
-                    # Sorting with reverse=True (Descending):
-                    # 1. Prefix: "2025.11.22" > "2025.11.21". (Newer date on top).
-                    # 2. Index: We want 1 before 10.
-                    #    In reverse sort, bigger comes first.
-                    #    -1 > -10. So -1 (Index 1) comes before -10 (Index 10).
                     return (prefix, -index)
-                
-                # Fallback: For files not matching the format
                 return (filename.lower(), 0)
 
             files.sort(key=custom_sort_key, reverse=True) 
@@ -685,18 +422,68 @@ class VideoManagerApp:
         else:
             messagebox.showinfo("Info", "No matching Trim files and originals found.\n(Filename must contain 'Trim' and original must exist)")
 
+    # --- NEW: Game Category Logic ---
+
+    def on_game_change(self, event):
+        selected = self.game_combobox.get()
+        
+        if selected == "+":
+            self.add_new_game_category()
+        else:
+            self.current_game_category = selected
+            self.refresh_tags_ui()
+
+    def add_new_game_category(self):
+        # Restore selection temporarily in case cancel
+        self.game_combobox.set(self.current_game_category)
+        
+        new_game = simpledialog.askstring("New Game", "Enter new game name:")
+        if new_game:
+            new_game = new_game.strip()
+            if new_game and new_game not in self.tag_data:
+                self.tag_data[new_game] = []
+                self.save_config()
+                self.current_game_category = new_game
+                self.refresh_tags_ui()
+            elif new_game in self.tag_data:
+                messagebox.showinfo("Info", "Category already exists.")
+                self.current_game_category = new_game
+                self.refresh_tags_ui()
+
+    def get_current_tags_list(self):
+        """Helper to get tags based on selection"""
+        if self.current_game_category == "All":
+            # Combine all lists and unique them
+            all_tags = set()
+            for tags in self.tag_data.values():
+                all_tags.update(tags)
+            return sorted(list(all_tags))
+        else:
+            # Return specific list
+            return sorted(self.tag_data.get(self.current_game_category, []))
+
     def refresh_tags_ui(self):
+        # Clear existing widgets
         for widget in self.tags_frame.winfo_children():
             widget.destroy()
             
         self.selected_tags_vars = {}
         
-        # Sort tags
-        self.available_tags.sort()
+        # Update Combobox Values
+        game_list = sorted(list(self.tag_data.keys()))
+        # Ensure 'All' is at the top
+        if "All" in game_list: game_list.remove("All") # Should not be a key in dict, but safety check
+        final_list = ["All"] + game_list + ["+"]
+        
+        self.game_combobox['values'] = final_list
+        self.game_combobox.set(self.current_game_category)
+
+        # Get tags for current view
+        display_tags = self.get_current_tags_list()
 
         # Grid layout for tags
         col_max = 8
-        for i, tag in enumerate(self.available_tags):
+        for i, tag in enumerate(display_tags):
             var = tk.BooleanVar()
             chk = ttk.Checkbutton(self.tags_frame, text=tag, variable=var, command=self.update_preview_name)
             
@@ -710,6 +497,11 @@ class VideoManagerApp:
             chk.bind("<Button-3>", lambda event, t=tag: self.show_tag_context_menu(event, t))
             if platform.system() == 'Darwin':
                 chk.bind("<Button-2>", lambda event, t=tag: self.show_tag_context_menu(event, t))
+        
+        # Reset search filters when category changes
+        self.tag_entry.delete(0, tk.END)
+        self.filtered_tags = display_tags
+        self.tab_cycle_index = -1
 
     def show_tag_context_menu(self, event, tag):
         menu = tk.Menu(self.root, tearoff=0)
@@ -717,9 +509,23 @@ class VideoManagerApp:
         menu.post(event.x_root, event.y_root)
 
     def delete_custom_tag(self, tag):
-        if messagebox.askyesno("Delete Confirmation", f"Permanently delete tag '{tag}'?"):
-            if tag in self.available_tags:
-                self.available_tags.remove(tag)
+        if messagebox.askyesno("Delete Confirmation", f"Delete tag '{tag}' from '{self.current_game_category}' view?"):
+            
+            deleted = False
+            
+            if self.current_game_category == "All":
+                # Remove from ALL categories
+                for game in self.tag_data:
+                    if tag in self.tag_data[game]:
+                        self.tag_data[game].remove(tag)
+                        deleted = True
+            else:
+                # Remove from specific category
+                if tag in self.tag_data[self.current_game_category]:
+                    self.tag_data[self.current_game_category].remove(tag)
+                    deleted = True
+            
+            if deleted:
                 if tag in self.selected_tags_vars:
                     del self.selected_tags_vars[tag]
                 
@@ -729,42 +535,33 @@ class VideoManagerApp:
 
     def on_tag_search_type(self, event):
         """Filter logic for Entry"""
-        # Ignore navigation/control keys
         if event.keysym in ['Up', 'Down', 'Return', 'Tab']:
             return
             
         current_text = self.tag_entry.get()
+        current_source_list = self.get_current_tags_list()
         
-        # If empty, show all, reset cycle
         if current_text == '':
-            self.filtered_tags = self.available_tags
+            self.filtered_tags = current_source_list
             self.tab_cycle_index = -1
         else:
-            # Filter data
             self.filtered_tags = []
-            for item in self.available_tags:
+            for item in current_source_list:
                 if current_text.lower() in item.lower():
                     self.filtered_tags.append(item)
             
-            # Reset cycle index on input change
             self.tab_cycle_index = -1
 
     def on_tab_cycle(self, event):
         """Handle Tab key cycling"""
         if not self.filtered_tags:
-            return # No items to cycle
+            return 
         
-        # Increment index and wrap around
         self.tab_cycle_index = (self.tab_cycle_index + 1) % len(self.filtered_tags)
-        
-        # Get next tag
         next_tag = self.filtered_tags[self.tab_cycle_index]
         
-        # Update text
         self.tag_entry.delete(0, tk.END)
         self.tag_entry.insert(0, next_tag)
-        
-        # Prevent default focus change
         return 'break'
 
     def add_or_select_tag(self):
@@ -773,9 +570,11 @@ class VideoManagerApp:
         if not input_text:
             return
             
-        # Check if exists (case-insensitive)
+        current_source_list = self.get_current_tags_list()
+        
+        # Check if exists (case-insensitive) in CURRENT view
         existing_tag = None
-        for tag in self.available_tags:
+        for tag in current_source_list:
             if tag.lower() == input_text.lower():
                 existing_tag = tag
                 break
@@ -786,24 +585,37 @@ class VideoManagerApp:
                 self.selected_tags_vars[existing_tag].set(True)
                 self.update_preview_name()
                 self.tag_entry.delete(0, tk.END)
-                
-                # Restore filter list
-                self.filtered_tags = self.available_tags
+                # Reset search
+                self.filtered_tags = current_source_list
                 self.tab_cycle_index = -1
         else:
-            # Create new
-            self.available_tags.append(input_text)
-            self.save_config()
-            self.refresh_tags_ui()
+            # Create new tag
+            # If "All" is selected, we need to know where to save it. 
+            # Default to "General" or first available, or alert user? 
+            # Let's add to "General" if "All" is active, otherwise specific category.
             
-            # Select the new one
-            if input_text in self.selected_tags_vars:
-                self.selected_tags_vars[input_text].set(True)
+            target_category = self.current_game_category
             
-            self.update_preview_name()
-            self.tag_entry.delete(0, tk.END)
-            self.filtered_tags = self.available_tags
-            self.tab_cycle_index = -1
+            if target_category == "All":
+                if "General" not in self.tag_data:
+                    self.tag_data["General"] = []
+                target_category = "General"
+                messagebox.showinfo("Note", f"Tag added to 'General' category because 'All' was selected.")
+            
+            # Add to data
+            if input_text not in self.tag_data[target_category]:
+                self.tag_data[target_category].append(input_text)
+                self.save_config()
+                self.refresh_tags_ui()
+                
+                # Select the new one
+                if input_text in self.selected_tags_vars:
+                    self.selected_tags_vars[input_text].set(True)
+                
+                self.update_preview_name()
+                self.tag_entry.delete(0, tk.END)
+                self.filtered_tags = self.get_current_tags_list()
+                self.tab_cycle_index = -1
 
     def on_file_select(self, event):
         selection = self.file_listbox.curselection()
